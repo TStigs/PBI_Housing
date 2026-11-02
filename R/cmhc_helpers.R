@@ -17,41 +17,79 @@ suppressPackageStartupMessages({
 # 1. CMHC API Wrapper with Automatic Retry
 # =============================================================================
 
-#' Query CMHC with Automatic Retries
+#' Query CMHC with Automatic Retries, Rate-Limit Detection, and Pacing
 #'
-#' CMHC's web servers occasionally drop connections or return error 500 when
-#' handling long batches of requests. This helper catches network errors and
-#' retries up to `attempts` times with an increasing pause before giving up.
+#' CMHC's web servers occasionally drop connections, return error 500, or
+#' throttle requests with status 429/403. This helper:
+#' 1. Paces requests proactively with a polite delay (pause_seconds).
+#' 2. Distinguishes genuine missing data (NA) from server/rate failures.
+#' 3. Catches HTTP 429 (rate-limit), 403 (forbidden), 500 (crash), and WAF blocks.
+#' 4. Retries up to `attempts` times with an exponential backoff.
 #'
 #' @param ... Arguments forwarded directly to cmhc::get_cmhc()
 #' @param attempts Number of retry attempts (default = 3)
-#' @param wait_seconds Initial wait time in seconds between retries
-#' @return A data frame returned by cmhc::get_cmhc()
-get_cmhc_with_retry <- function(..., attempts = 3L, wait_seconds = 2) {
-  last_error <- NULL
+#' @param wait_seconds Initial wait time in seconds between retries (default = 2)
+#' @param pause_seconds Proactive delay in seconds before each request (default = 0.5)
+#' @return A data frame returned by cmhc::get_cmhc(), or NULL if unsurveyed/failed
+get_cmhc_with_retry <- function(..., attempts = 3L, wait_seconds = 2, pause_seconds = 0.5) {
+  last_error_desc <- NULL
   
   for (attempt in seq_len(attempts)) {
+    # 1. Proactive pacing: pause before request to prevent triggering rate limits
+    if (pause_seconds > 0) {
+      Sys.sleep(pause_seconds)
+    }
+    
+    warning_msgs <- character()
     result <- tryCatch(
-      cmhc::get_cmhc(...),
+      withCallingHandlers(
+        cmhc::get_cmhc(...),
+        warning = function(w) {
+          warning_msgs <<- c(warning_msgs, conditionMessage(w))
+          invokeRestart("muffleWarning") # Suppress console clutter during retries
+        }
+      ),
       error = function(err) err
     )
     
-    # If successful (result is not an error object), return it immediately
-    if (!inherits(result, "error")) {
+    # 2. Check for fatal R errors (curl timeout, dropped socket, DNS failure)
+    is_error <- inherits(result, "error")
+    
+    # 3. Check for CMHC server / rate-limiting warnings that return NULL
+    is_server_error <- FALSE
+    if (is.null(result) && length(warning_msgs) > 0) {
+      if (any(grepl("status (429|403|500|502|503|504)", warning_msgs, ignore.case = TRUE)) ||
+          any(grepl("Problem reading response|Access Denied", warning_msgs, ignore.case = TRUE))) {
+        is_server_error <- TRUE
+      }
+    }
+    
+    # 4. Success: valid data frame returned (even if individual observations are NA)
+    if (!is_error && !is_server_error && is.data.frame(result)) {
       return(result)
     }
     
-    last_error <- result
+    # 5. Legitimate unsurveyed region (e.g., Nunavut) with no server errors
+    if (!is_error && !is_server_error && is.null(result)) {
+      return(NULL)
+    }
+    
+    # 6. If we reached here, a server error or network crash occurred -> Back off & retry
+    last_error_desc <- if (is_error) conditionMessage(result) else paste(warning_msgs, collapse = "; ")
+    
     if (attempt < attempts) {
-      message("  [Retry ", attempt, "/", attempts, "] Server busy, waiting ",
-              wait_seconds * attempt, " seconds...")
-      Sys.sleep(wait_seconds * attempt)
+      # For rate-limits (429 / 403), use a longer cooldown pause
+      is_rate_limit <- grepl("429|403|Access Denied", last_error_desc, ignore.case = TRUE)
+      cooldown <- if (is_rate_limit) max(wait_seconds * attempt * 2, 5) else (wait_seconds * attempt)
+      
+      message("  [Retry ", attempt, "/", attempts, "] Server error/rate-limit (",
+              last_error_desc, "). Waiting ", cooldown, "s before retry...")
+      Sys.sleep(cooldown)
     }
   }
   
-  # If all attempts failed, throw a readable error explaining what happened
-  warning("CMHC request failed after ", attempts, " attempts: ",
-          conditionMessage(last_error), call. = FALSE)
+  # All attempts exhausted
+  warning("CMHC request failed after ", attempts, " attempts: ", last_error_desc, call. = FALSE)
   return(NULL)
 }
 
@@ -72,7 +110,7 @@ get_cmhc_with_retry <- function(..., attempts = 3L, wait_seconds = 2) {
 #' @param geo_level "cma" or "province" (determines output column schema)
 #' @return A cleaned data frame sorted chronologically and geographically
 fetch_rms <- function(geo_codes, geo_map, series_name = c("Average Rent", "Vacancy Rate"),
-                      geo_level = c("cma", "province")) {
+                      geo_level = c("cma", "province"), pause_seconds = 0.5) {
   
   series_name <- match.arg(series_name)
   geo_level   <- match.arg(geo_level)
@@ -93,12 +131,13 @@ fetch_rms <- function(geo_codes, geo_map, series_name = c("Average Rent", "Vacan
       message("Fetching RMS [", series_name, "] for: ", geo_name, " (", dtype, ")...")
       
       raw <- get_cmhc_with_retry(
-        survey    = "Rms",
-        series    = series_name,
-        dimension = "Bedroom Type",
-        breakdown = "Historical Time Periods",
-        geo_uid   = as.character(geo),
-        filters   = list(dwelling_type_desc_en = dtype)
+        survey        = "Rms",
+        series        = series_name,
+        dimension     = "Bedroom Type",
+        breakdown     = "Historical Time Periods",
+        geo_uid       = as.character(geo),
+        filters       = list(dwelling_type_desc_en = dtype),
+        pause_seconds = pause_seconds
       )
       
       # Skip if CMHC returned no rows (e.g., Nunavut)
@@ -194,7 +233,7 @@ fetch_rms <- function(geo_codes, geo_map, series_name = c("Average Rent", "Vacan
 #' @return A cleaned data frame sorted chronologically and geographically
 fetch_scss <- function(geo_codes, geo_map, series_name = c("Starts", "Completions"),
                        frequency = c("Monthly", "Quarterly", "Annual"),
-                       geo_level = c("cma", "province")) {
+                       geo_level = c("cma", "province"), pause_seconds = 0.5) {
   
   series_name <- match.arg(series_name)
   frequency   <- match.arg(frequency)
@@ -212,13 +251,14 @@ fetch_scss <- function(geo_codes, geo_map, series_name = c("Starts", "Completion
     
     for (mtype in market_api_filters) {
       raw <- get_cmhc_with_retry(
-        survey    = "Scss",
-        series    = series_name,
-        dimension = "Dwelling Type",
-        breakdown = "Historical Time Periods",
-        geo_uid   = as.character(geo),
-        frequency = frequency, # <-- Tells CMHC which frequency table to return
-        filters   = list(`dimension-18` = mtype)
+        survey        = "Scss",
+        series        = series_name,
+        dimension     = "Dwelling Type",
+        breakdown     = "Historical Time Periods",
+        geo_uid       = as.character(geo),
+        frequency     = frequency, # <-- Tells CMHC which frequency table to return
+        filters       = list(`dimension-18` = mtype),
+        pause_seconds = pause_seconds
       )
       
       if (is.null(raw) || !is.data.frame(raw) || nrow(raw) == 0L) {

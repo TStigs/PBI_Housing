@@ -22,6 +22,9 @@ frequencies_to_run <- c("monthly", "quarterly", "annual")
 # Save Stata (.dta) files alongside Excel files?
 save_stata_files <- TRUE
 
+# Proactive pacing delay (seconds) between requests to prevent CMHC rate-limiting
+pause_seconds <- 0.5
+
 
 # =============================================================================
 # SETUP
@@ -57,7 +60,8 @@ message("=======================================================")
 # --- 1. Average Rent ($) ---
 if ("rent" %in% datasets_to_run) {
   message("\n--- Fetching Average Rent ---")
-  cma_rent <- fetch_rms(target_cmas, cma_name_map, series_name = "Average Rent", geo_level = "cma")
+  cma_rent <- fetch_rms(target_cmas, cma_name_map, series_name = "Average Rent",
+                        geo_level = "cma", pause_seconds = pause_seconds)
   
   xlsx_path <- file.path(cma_dir, "avg_rent_41_CMA.xlsx")
   write_dataset_xlsx(cma_rent, xlsx_path)
@@ -69,7 +73,8 @@ if ("rent" %in% datasets_to_run) {
 # --- 2. Vacancy Rate (%) ---
 if ("vacancy" %in% datasets_to_run) {
   message("\n--- Fetching Vacancy Rate ---")
-  cma_vacancy <- fetch_rms(target_cmas, cma_name_map, series_name = "Vacancy Rate", geo_level = "cma")
+  cma_vacancy <- fetch_rms(target_cmas, cma_name_map, series_name = "Vacancy Rate",
+                           geo_level = "cma", pause_seconds = pause_seconds)
   
   xlsx_path <- file.path(cma_dir, "vacancy_rate_41_CMA.xlsx")
   write_dataset_xlsx(cma_vacancy, xlsx_path)
@@ -84,7 +89,7 @@ if ("starts" %in% datasets_to_run) {
   for (freq in frequencies_to_run) {
     freq_cap <- stringr::str_to_title(freq)
     starts_df <- fetch_scss(target_cmas, cma_name_map, series_name = "Starts",
-                            frequency = freq_cap, geo_level = "cma")
+                            frequency = freq_cap, geo_level = "cma", pause_seconds = pause_seconds)
     
     if (freq == "monthly") {
       write_dataset_xlsx(starts_df, file.path(cma_dir, "housing_starts_41_CMA.xlsx"))
@@ -105,7 +110,7 @@ if ("completions" %in% datasets_to_run) {
   for (freq in frequencies_to_run) {
     freq_cap <- stringr::str_to_title(freq)
     comp_df <- fetch_scss(target_cmas, cma_name_map, series_name = "Completions",
-                          frequency = freq_cap, geo_level = "cma")
+                          frequency = freq_cap, geo_level = "cma", pause_seconds = pause_seconds)
     
     if (freq == "monthly") {
       write_dataset_xlsx(comp_df, file.path(cma_dir, "housing_completions_41_CMA.xlsx"))

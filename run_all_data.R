@@ -41,6 +41,10 @@ frequencies_to_run <- c(
 # 4. Save Stata (.dta) files for CMA data? (Excel is always saved)
 save_stata_files <- TRUE
 
+# 5. Proactive pacing delay (seconds) between requests to prevent CMHC rate-limiting
+# (0.5 seconds is polite and prevents triggering CMHC firewall blocks)
+pause_seconds <- 0.5
+
 
 # =============================================================================
 # PROJECT SETUP & DEPENDENCIES
@@ -116,7 +120,8 @@ if (isTRUE(run_cma_data)) {
   # --- 1.1 Average Rent ($) ---
   if ("rent" %in% datasets_to_run) {
     message("\n--- Fetching CMA Average Rent ---")
-    cma_rent <- fetch_rms(target_cmas, cma_name_map, series_name = "Average Rent", geo_level = "cma")
+    cma_rent <- fetch_rms(target_cmas, cma_name_map, series_name = "Average Rent",
+                          geo_level = "cma", pause_seconds = pause_seconds)
     
     xlsx_path <- file.path(cma_dir, "avg_rent_41_CMA.xlsx")
     write_dataset_xlsx(cma_rent, xlsx_path)
@@ -129,7 +134,8 @@ if (isTRUE(run_cma_data)) {
   # --- 1.2 Vacancy Rate (%) ---
   if ("vacancy" %in% datasets_to_run) {
     message("\n--- Fetching CMA Vacancy Rate ---")
-    cma_vacancy <- fetch_rms(target_cmas, cma_name_map, series_name = "Vacancy Rate", geo_level = "cma")
+    cma_vacancy <- fetch_rms(target_cmas, cma_name_map, series_name = "Vacancy Rate",
+                             geo_level = "cma", pause_seconds = pause_seconds)
     
     xlsx_path <- file.path(cma_dir, "vacancy_rate_41_CMA.xlsx")
     write_dataset_xlsx(cma_vacancy, xlsx_path)
@@ -146,7 +152,7 @@ if (isTRUE(run_cma_data)) {
     for (freq in frequencies_to_run) {
       freq_cap <- stringr::str_to_title(freq)
       starts_df <- fetch_scss(target_cmas, cma_name_map, series_name = "Starts",
-                              frequency = freq_cap, geo_level = "cma")
+                              frequency = freq_cap, geo_level = "cma", pause_seconds = pause_seconds)
       
       if (freq == "monthly") {
         # Monthly file
@@ -185,7 +191,7 @@ if (isTRUE(run_cma_data)) {
     for (freq in frequencies_to_run) {
       freq_cap <- stringr::str_to_title(freq)
       comp_df <- fetch_scss(target_cmas, cma_name_map, series_name = "Completions",
-                            frequency = freq_cap, geo_level = "cma")
+                            frequency = freq_cap, geo_level = "cma", pause_seconds = pause_seconds)
       
       if (freq == "monthly") {
         # Monthly file
@@ -231,7 +237,8 @@ if (isTRUE(run_provincial_data)) {
   # --- 2.1 Average Rent ($) ---
   if ("rent" %in% datasets_to_run) {
     message("\n--- Fetching Provincial Average Rent ---")
-    prov_rent <- fetch_rms(province_codes, province_map, series_name = "Average Rent", geo_level = "province")
+    prov_rent <- fetch_rms(province_codes, province_map, series_name = "Average Rent",
+                           geo_level = "province", pause_seconds = pause_seconds)
     
     xlsx_path <- file.path(prov_dir, "avg_rent_province_territory.xlsx")
     write_dataset_xlsx(prov_rent, xlsx_path)
@@ -241,7 +248,8 @@ if (isTRUE(run_provincial_data)) {
   # --- 2.2 Vacancy Rate (%) ---
   if ("vacancy" %in% datasets_to_run) {
     message("\n--- Fetching Provincial Vacancy Rate ---")
-    prov_vacancy <- fetch_rms(province_codes, province_map, series_name = "Vacancy Rate", geo_level = "province")
+    prov_vacancy <- fetch_rms(province_codes, province_map, series_name = "Vacancy Rate",
+                             geo_level = "province", pause_seconds = pause_seconds)
     
     xlsx_path <- file.path(prov_dir, "vacancy_rate_province_territory.xlsx")
     write_dataset_xlsx(prov_vacancy, xlsx_path)
@@ -258,7 +266,7 @@ if (isTRUE(run_provincial_data)) {
     for (freq in frequencies_to_run) {
       freq_cap <- stringr::str_to_title(freq)
       prov_starts <- fetch_scss(province_codes, province_map, series_name = "Starts",
-                                frequency = freq_cap, geo_level = "province")
+                                frequency = freq_cap, geo_level = "province", pause_seconds = pause_seconds)
       
       if (freq == "monthly") {
         monthly_starts_prov <- prov_starts
@@ -293,7 +301,7 @@ if (isTRUE(run_provincial_data)) {
     for (freq in frequencies_to_run) {
       freq_cap <- stringr::str_to_title(freq)
       prov_comp <- fetch_scss(province_codes, province_map, series_name = "Completions",
-                              frequency = freq_cap, geo_level = "province")
+                              frequency = freq_cap, geo_level = "province", pause_seconds = pause_seconds)
       
       if (freq == "monthly") {
         monthly_comp_prov <- prov_comp
