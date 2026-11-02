@@ -1,95 +1,90 @@
-# Power BI housing data pipeline
+# Power BI Housing Data Pipeline
 
-## Existing CMA pipeline
+This repository automates the retrieval, standardization, and export of housing market data from the **Canada Mortgage and Housing Corporation (CMHC)** for Power BI dashboards.
 
-`get_cmhc_data.R` is the original CMA pipeline and has not been modified.
+---
 
-## Provincial and territorial CMHC pipeline
+## Architecture Overview
 
-### Run from RStudio
+The pipeline supports both **CMA level** (41 major Census Metropolitan Areas + Canada) and **Provincial level** (10 Provinces + 3 Territories), across all published frequencies:
 
-1. Open `get_cmhc_provincial_data.R` in RStudio.
-2. Find the `USER SETTINGS` section near the top.
-3. Set `datasets_to_run` to the datasets you want, for example:
-
-```r
-datasets_to_run <- c("rent", "vacancy")
+```
+PBI_Housing/
+├── run_all_data.R             # Master runner with simple USER SETTINGS
+├── R/
+│   ├── cmhc_config.R          # Target CMAs, provinces, and survey filters
+│   └── cmhc_helpers.R         # Core functions (fetch_rms, fetch_scss, retries, export)
+└── PBI_Housing_Data/          # Outputs: Excel (.xlsx) and Stata (.dta)
+    └── Provincial/
 ```
 
-4. Click **Source** in the upper-right corner of the script editor.
+### Data Sources & Frequencies
+1. **Rental Market Survey (RMS)**:
+   * **Measures:** Average Rent (`avg_rent`) and Vacancy Rate (`vacancy_rate`).
+   * **Frequency:** **Annual** (conducted once per year in October).
+2. **Starts & Completions Survey (Scss)**:
+   * **Measures:** Housing Starts and Housing Completions.
+   * **Frequencies:** **Monthly**, **Quarterly**, and **Annual** (queried directly from CMHC or derived locally).
 
-To run the CMA and provincial pipelines together, open `run_all_data.R`, edit
-its settings, and click **Source**:
+---
 
-```r
-run_cma_data <- TRUE
-run_provincial_data <- TRUE
-provincial_datasets_to_run <- c("rent", "vacancy", "starts", "completions")
-```
+## How to Run a Data Refresh
 
-Set `run_cma_data <- FALSE` if you only want the provincial files refreshed.
+### Option A: From RStudio (Recommended)
+1. Open [`run_all_data.R`](file:///Users/tylerstigall/Documents/UVic/RA/Justin/PBI_Housing/run_all_data.R) in RStudio.
+2. Edit the `USER SETTINGS` section at the top:
+   ```r
+   run_cma_data        <- TRUE    # Refresh Canada + 41 CMAs
+   run_provincial_data <- TRUE    # Refresh 10 Provinces + 3 Territories
 
-### Optional terminal use
+   datasets_to_run <- c("rent", "vacancy", "starts", "completions")
+   frequencies_to_run <- c("monthly", "quarterly", "annual")
+   save_stata_files <- TRUE       # Saves .dta alongside .xlsx for CMAs
+   ```
+3. Click the **Source** button in the upper-right corner of the editor window.
 
-Run every provincial/territorial dataset:
-
-```sh
-Rscript get_cmhc_provincial_data.R
-```
-
-Run only selected datasets:
-
-```sh
-Rscript get_cmhc_provincial_data.R rent vacancy
-Rscript get_cmhc_provincial_data.R starts completions
-```
-
-Outputs are written to `PBI_Housing_Data/Provincial/`. The construction
-pipeline creates separate monthly and annual files. Annual files contain
-`months_observed` and `is_complete_year`; partial current-year totals should
-not be compared with completed calendar years without applying that flag.
-
-The pipeline includes all ten provinces and all three territories. Edit
-`province_map` in `R/cmhc_provincial_config.R` if a narrower geography list is
-needed.
-
-## Master runner
-
-Run both the original CMA pipeline and every provincial dataset:
-
+### Option B: From Terminal
+Run the entire pipeline:
 ```sh
 Rscript run_all_data.R
 ```
 
-Run only provincial datasets:
+---
 
-```sh
-Rscript run_all_data.R provincial
-```
+## Output Files Inventory
 
-Run selected provincial datasets:
+### CMA / Canada Outputs (`PBI_Housing_Data/`)
+* **Average Rent**: `avg_rent_41_CMA.xlsx` / `.dta` *(Annual)*
+* **Vacancy Rate**: `vacancy_rate_41_CMA.xlsx` / `.dta` *(Annual)*
+* **Housing Starts**:
+  * Monthly: `housing_starts_41_CMA.xlsx` / `.dta`
+  * Quarterly: `housing_starts_quarterly_41_CMA.xlsx` / `.dta`
+  * Annual: `annual_housing_starts_41_CMA.xlsx` / `.dta`
+* **Housing Completions**:
+  * Monthly: `housing_completions_41_CMA.xlsx` / `.dta`
+  * Quarterly: `housing_completions_quarterly_41_CMA.xlsx` / `.dta`
+  * Annual: `annual_housing_completions_41_CMA.xlsx` / `.dta`
 
-```sh
-Rscript run_all_data.R provincial rent vacancy
-```
+### Provincial & Territorial Outputs (`PBI_Housing_Data/Provincial/`)
+* **Average Rent**: `avg_rent_province_territory.xlsx` *(Annual)*
+* **Vacancy Rate**: `vacancy_rate_province_territory.xlsx` *(Annual)*
+* **Housing Starts**:
+  * Monthly: `housing_starts_monthly_province_territory.xlsx`
+  * Quarterly: `housing_starts_quarterly_province_territory.xlsx`
+  * Annual: `housing_starts_annual_province_territory.xlsx`
+* **Housing Completions**:
+  * Monthly: `housing_completions_monthly_province_territory.xlsx`
+  * Quarterly: `housing_completions_quarterly_province_territory.xlsx`
+  * Annual: `housing_completions_annual_province_territory.xlsx`
+* **Audit Log**: `data_refresh_log.xlsx` *(Logs timestamps, row counts, and date coverage)*
 
-The original CMA script runs in a separate R process. This prevents its
-environment-clearing command from affecting the master runner.
+---
 
-## Statistics Canada and Power BI
+## Important Rules for Dashboards & Analysis
 
-Choose the connection after identifying the Statistics Canada table Product
-ID (PID) and required dimensions:
-
-- For a small set of series or vectors, call the WDS JSON endpoint directly
-  from Power Query using `Web.Contents`.
-- For most or all of a table, use the WDS full-table CSV download method and
-  filter the CSV in Power Query.
-- Keep the `Web.Contents` host static and use its `RelativePath` and `Query`
-  options when parameters are needed. This is more compatible with scheduled
-  refresh in the Power BI service than constructing an entirely dynamic URL.
-- Use Anonymous credentials for the public Statistics Canada endpoint.
-
-The final Power Query should be written for the selected table rather than as
-a generic query, so column names, scalar factors, status symbols, and filters
-can be handled explicitly.
+1. **Double Counting Warning (Construction Data)**:
+   * In Starts and Completions files, `market = "all"` and `dwelling = "all"` represent marginal totals. Do not sum across all rows without filtering by specific market or dwelling types.
+2. **Current-Year Incomplete Data**:
+   * For the current calendar year, annual construction figures reflect partial year-to-date totals. In the provincial annual files, check the `is_complete_year` column (`TRUE` only when all 12 months are present).
+3. **Quarterly Completeness**:
+   * When using quarterly series, verify whether the current quarter is completed or in progress before comparing with past full quarters.
