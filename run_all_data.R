@@ -22,16 +22,23 @@ run_provincial_data <- TRUE    # 10 Provinces + 3 Territories
 # 2. Choose which datasets to refresh:
 # Options: "rent", "vacancy", "starts", "completions"
 # (Remove any dataset from this list that you do NOT want to refresh)
+# "rent",
+#  "vacancy",
+#  "starts",
+#  "completions"
+
 datasets_to_run <- c(
   "rent",
   "vacancy",
-  "starts",
-  "completions"
+  "starts"
 )
 
 # 3. Choose which frequencies to download for Starts & Completions:
 # Options: "monthly", "quarterly", "annual"
 # By default, all three frequencies are downloaded directly from CMHC!
+# "monthly",
+# "quarterly",
+# "annual"
 frequencies_to_run <- c(
   "monthly",
   "quarterly",
@@ -39,7 +46,7 @@ frequencies_to_run <- c(
 )
 
 # 4. Save Stata (.dta) files for CMA data? (Excel is always saved)
-save_stata_files <- TRUE
+save_stata_files <- FALSE
 
 # 5. Proactive pacing delay (seconds) between requests to prevent CMHC rate-limiting
 # (0.5 seconds is polite and prevents triggering CMHC firewall blocks)
@@ -79,7 +86,7 @@ if (length(script_arg) > 0L) {
 }
 
 # Output directories
-cma_dir  <- file.path(project_root, "PBI_Housing_Data")
+cma_dir  <- file.path(project_root, "PBI_Housing_Data", "CMA")
 prov_dir <- file.path(project_root, "PBI_Housing_Data", "Provincial")
 
 # Load configuration and helper functions
