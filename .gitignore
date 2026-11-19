@@ -1,6 +1,9 @@
 /.DS_Store
 /.Rhistory
-/.xlsx
+
+# Ignore Specific File types
+*.xlsx
+*.csv
 
 /CPIM_dashboard.pbix
 /PBI_Housing_Data
