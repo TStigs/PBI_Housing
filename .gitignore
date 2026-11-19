@@ -1,13 +1,33 @@
-/.DS_Store
-/.Rhistory
-
 # Ignore Specific File types
 *.xlsx
 *.csv
+*.pdf
+*.pbix
 
-/CPIM_dashboard.pbix
-/PBI_Housing_Data
-/avg_rent.xlsx
-/housing_completions.xlsx
-/public_lecture_descriptives.pbix
-/~$HC_Data_Refresh_Walkthrough.docx
+# History files
+.Rhistory
+.Rapp.history
+
+# Output files from R CMD build
+/*.tar.gz
+
+# Output files from R CMD check
+/*.Rcheck/
+
+# OAuth2 token
+.httr-oauth
+
+# Session Data files
+.RData
+.RDataTmp
+
+# User-specific files
+.Ruserdata
+
+# Directories
+PBI_Housing_Data/
+PBI_Population_Data/
+plots/
+
+
+.DS_Store
